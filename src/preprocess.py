@@ -20,28 +20,35 @@ df = pd.read_csv("processed/combined_flows.csv", low_memory=False)
 print(f"Loaded shape: {df.shape}  (took {time.time()-t0:.1f}s)")
 
 # ----------------------------------------------------------------------
-# 2. Drop columns we decided not to use
+# 2. Drop exact full-row duplicates ONLY
+# (checked across all original columns, including IP/timestamp,
+#  matches the 3,413 found during EDA — NOT the 259k feature-level
+#  near-duplicates, which we decided to KEEP since they reflect real
+#  repetitive traffic patterns like port scans / botnet beacons)
 # ----------------------------------------------------------------------
-print("\nDropping unused columns...")
+print("\nDropping exact duplicate rows...")
 t0 = time.time()
 
+before = len(df)
+df = df.drop_duplicates()
+print(f"Dropped {before - len(df)} exact duplicate rows")
+
+# ----------------------------------------------------------------------
+# 3. Now drop columns we decided not to use as features
+# ----------------------------------------------------------------------
 cols_to_drop = ["Flow ID", "Src IP", "Dst IP", "Timestamp", "Src Port"]
 df = df.drop(columns=cols_to_drop)
 
-# also drop duplicate rows found during EDA
-before = len(df)
-df = df.drop_duplicates()
-print(f"Dropped {before - len(df)} duplicate rows")
-print(f"Shape after dropping columns/duplicates: {df.shape}  (took {time.time()-t0:.1f}s)")
+print(f"Shape after dropping columns: {df.shape}  (took {time.time()-t0:.1f}s)")
 
 # ----------------------------------------------------------------------
-# 3. Separate features (X) and label (y)
+# 4. Separate features (X) and label (y)
 # ----------------------------------------------------------------------
 X = df.drop(columns=["Label"])
 y = df["Label"]
 
 # ----------------------------------------------------------------------
-# 4. Stratified train/test split (80/20) on REAL data, before any sampling
+# 5. Stratified train/test split (80/20) on REAL data, before any sampling
 # ----------------------------------------------------------------------
 print("\nSplitting train/test...")
 t0 = time.time()
@@ -56,7 +63,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 print(f"Train shape: {X_train.shape}, Test shape: {X_test.shape}  (took {time.time()-t0:.1f}s)")
 
 # ----------------------------------------------------------------------
-# 5. Encode labels (string -> integer)
+# 6. Encode labels (string -> integer)
 # ----------------------------------------------------------------------
 print("\nEncoding labels...")
 t0 = time.time()
@@ -71,13 +78,12 @@ print("Classes:", list(label_encoder.classes_))
 print(f"(took {time.time()-t0:.1f}s)")
 
 # ----------------------------------------------------------------------
-# 6. Sampling plan (TRAIN ONLY) — undersample BENIGN, SMOTE tiny classes
+# 7. Sampling plan (TRAIN ONLY) — undersample BENIGN, SMOTE tiny classes
 # ----------------------------------------------------------------------
 print("\nApplying sampling (train only)...")
 t0 = time.time()
 
-# step 6a: undersample BENIGN down to 300,000 rows
-# we do this manually by randomly dropping extra BENIGN rows from train
+# step 7a: undersample BENIGN down to 300,000 rows
 benign_label_num = label_encoder.transform(["BENIGN"])[0]
 
 train_df = X_train.copy()
@@ -93,8 +99,7 @@ train_df = pd.concat([benign_rows, other_rows], ignore_index=True)
 
 print(f"After BENIGN undersampling: {train_df.shape}")
 
-# step 6b: SMOTE on the tiny classes
-# target counts per class (only listing the ones we want to INCREASE)
+# step 7b: SMOTE on the tiny classes
 smote_targets = {
     "Heartbleed": 150,
     "Web Attack - Sql Injection": 150,
@@ -103,14 +108,11 @@ smote_targets = {
     "Web Attack - Brute Force": 3000,
 }
 
-# convert class names to their encoded numbers
 smote_targets_enc = {
     label_encoder.transform([name])[0]: target
     for name, target in smote_targets.items()
 }
 
-# SMOTE needs a dict of {class_label: desired_count} for ALL classes,
-# so we build the full target dict: classes not in our list keep their current count
 current_counts = train_df["Label"].value_counts().to_dict()
 full_sampling_strategy = current_counts.copy()
 full_sampling_strategy.update(smote_targets_enc)
@@ -118,8 +120,6 @@ full_sampling_strategy.update(smote_targets_enc)
 X_train_sampled = train_df.drop(columns=["Label"])
 y_train_sampled = train_df["Label"]
 
-# SMOTE's k_neighbors must be less than the smallest class size we're using as input
-# Heartbleed/SQL Injection have very few real rows, so we lower k_neighbors to be safe
 smote = SMOTE(
     sampling_strategy=full_sampling_strategy,
     k_neighbors=5,
@@ -132,7 +132,7 @@ print(f"After SMOTE: {X_train_final.shape}")
 print(f"(sampling took {time.time()-t0:.1f}s)")
 
 # ----------------------------------------------------------------------
-# 7. Scale features (fit on train only, apply to both)
+# 8. Scale features (fit on train only, apply to both)
 # ----------------------------------------------------------------------
 print("\nScaling features...")
 t0 = time.time()
@@ -146,7 +146,7 @@ joblib.dump(scaler, "models/scaler.joblib")
 print(f"(took {time.time()-t0:.1f}s)")
 
 # ----------------------------------------------------------------------
-# 8. Save everything for the training scripts
+# 9. Save everything for the training scripts
 # ----------------------------------------------------------------------
 print("\nSaving processed arrays...")
 t0 = time.time()
