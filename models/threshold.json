@@ -1,1 +1,5 @@
-{"threshold": 3.1938372168041866e-05}
+{
+  "threshold": 4.3676014066972976e-05,
+  "percentile": 95,
+  "epochs_trained": 37
+}
