@@ -78,19 +78,19 @@ st.markdown("""
 CLASS_COLORS = {
     "BENIGN":                    "#48bb78",
     "DDoS":                      "#fc8181",
-    "DoS Hulk":                  "#f56565",
+    "DoS Hulk":                  "#c53030",
     "DoS GoldenEye":             "#e53e3e",
-    "DoS slowloris":             "#c53030",
+    "DoS slowloris":             "#f56565",
     "DoS Slowhttptest":          "#9b2c2c",
     "PortScan":                  "#76e4f7",
     "FTP-Patator":               "#b794f4",
     "SSH-Patator":               "#9f7aea",
-    "Bot":                       "#f6ad55",
+    "Bot":                       "#2f87da",
     "Web Attack - Brute Force":  "#ed8936",
     "Web Attack - XSS":          "#dd6b20",
     "Web Attack - Sql Injection":"#c05621",
     "Infiltration":              "#ff63c3",
-    "Heartbleed":                "#ff0000",
+    "Heartbleed":                "#ce1791",
     "Unknown Anomaly":           "#ffd700",
 }
 

@@ -38,19 +38,19 @@ print(f"Ready — {TOTAL_ROWS} flows loaded.")
 CLASS_COLORS = {
     "BENIGN":                    "#48bb78",
     "DDoS":                      "#fc8181",
-    "DoS Hulk":                  "#f56565",
+    "DoS Hulk":                  "#c53030",
     "DoS GoldenEye":             "#e53e3e",
-    "DoS slowloris":             "#c53030",
+    "DoS slowloris":             "#f56565",
     "DoS Slowhttptest":          "#9b2c2c",
     "PortScan":                  "#76e4f7",
     "FTP-Patator":               "#b794f4",
     "SSH-Patator":               "#9f7aea",
-    "Bot":                       "#f6ad55",
+    "Bot":                       "#2f87da",
     "Web Attack - Brute Force":  "#ed8936",
     "Web Attack - XSS":          "#dd6b20",
     "Web Attack - Sql Injection":"#c05621",
     "Infiltration":              "#ff63c3",
-    "Heartbleed":                "#ff0000",
+    "Heartbleed":                "#ce1791",
     "Unknown Anomaly":           "#ffd700",
 }
 
@@ -132,7 +132,7 @@ app.layout = html.Div(
         html.Div([
             html.H1("🛡️ Network Intrusion Detection System",
                     style={"color": "#e2e8f0", "margin": "0"}),
-            html.P("Real-time flow analysis — CIC-IDS2017 simulation (confidence-gated pipeline)",
+            html.P("Real-time flow analysis — CIC-IDS2017 simulation",
                    style={"color": "#718096", "margin": "4px 0 0 0"}),
         ], style={"marginBottom": "20px"}),
 
