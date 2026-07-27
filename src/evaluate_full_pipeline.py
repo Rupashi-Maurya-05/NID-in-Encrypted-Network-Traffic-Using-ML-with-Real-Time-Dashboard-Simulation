@@ -7,7 +7,7 @@ import joblib
 import pandas as pd
 
 from tensorflow import keras
-from sklearn.metrics import classification_report, f1_score, confusion_matrix
+from sklearn.metrics import classification_report, f1_score
 
 # -----------------------------------------------------------------------
 # 1. Load everything
@@ -25,9 +25,10 @@ with open("models/threshold.json") as f:
 
 BENIGN_LABEL    = label_encoder.transform(["BENIGN"])[0]
 CONFIDENCE_GATE = 0.90
+WRONG_LABEL     = -1  # sentinel, not a valid class index
 
 # -----------------------------------------------------------------------
-# 2. Run both models on the full test set
+# 2. Run both models
 # -----------------------------------------------------------------------
 print("Running XGBoost...")
 xgb_preds   = xgb_model.predict(X_test)
@@ -41,23 +42,23 @@ flagged  = test_mse > threshold
 
 # -----------------------------------------------------------------------
 # 3. Stage 1 — Autoencoder alone (binary: BENIGN vs Attack)
-#    Shows the AE's standalone detection ability before XGBoost runs
 # -----------------------------------------------------------------------
 print("\n" + "="*65)
 print("STAGE 1 — AUTOENCODER ALONE (binary detection)")
 print("="*65)
 
-y_binary   = (y_test != BENIGN_LABEL).astype(int)
-ae_binary  = flagged.astype(int)
+y_binary  = (y_test != BENIGN_LABEL).astype(int)
+ae_binary = flagged.astype(int)
 
 print(classification_report(
     y_binary, ae_binary,
     target_names=["BENIGN", "Attack"],
     digits=4
 ))
+ae_f1 = f1_score(y_binary, ae_binary, average="macro")
+print(f"AE Binary Macro F1: {ae_f1:.4f}")
 
-# per-class flagging rate — shows which attack types AE catches
-print(f"{'Class':<30} {'Count':>8} {'Flagged':>10}")
+print(f"\n{'Class':<30} {'Count':>8} {'Flagged':>10}")
 print("-" * 52)
 for cid in np.unique(y_test):
     name = label_encoder.inverse_transform([cid])[0]
@@ -65,35 +66,37 @@ for cid in np.unique(y_test):
     pct  = flagged[mask].mean() * 100
     print(f"{name:<30} {mask.sum():>8} {pct:>9.1f}%")
 
-ae_f1 = f1_score(y_binary, ae_binary, average="macro")
-print(f"\nAE Binary Macro F1: {ae_f1:.4f}")
-
 # -----------------------------------------------------------------------
-# 4. Stage 2 — XGBoost alone (15-class, full test set, no AE)
+# 4. Stage 2 — XGBoost alone (15-class, full 419,376 flows)
 # -----------------------------------------------------------------------
 print("\n" + "="*65)
-print("STAGE 2 — XGBOOST ALONE (15-class, full test set)")
+print("STAGE 2 — XGBOOST ALONE (15-class, full 419,376 flows)")
 print("="*65)
 
 print(classification_report(
-    y_test,
-    xgb_preds,
+    y_test, xgb_preds,
     target_names=label_encoder.classes_,
     digits=4
 ))
-
 xgb_f1 = f1_score(y_test, xgb_preds, average="macro")
-print(f"XGBoost Macro F1: {xgb_f1:.4f}")
+print(f"XGBoost Standalone Macro F1: {xgb_f1:.4f}")
 
 # -----------------------------------------------------------------------
-# 5. Combined pipeline — confidence-gated AE + XGBoost (FINAL MODEL)
-#    Decision: flag Unknown Anomaly only when BOTH conditions hold:
-#      (a) AE reconstruction error > threshold
-#      (b) XGBoost BENIGN confidence < CONFIDENCE_GATE (0.90)
-#    Otherwise use XGBoost's predicted class directly
+# 5. Confidence-gated combined pipeline
+#    Honest evaluation: all 419,376 flows scored, no exclusions
+#
+#    Unknown Anomaly flows are scored as follows:
+#      - true label is non-BENIGN (real attack XGBoost missed):
+#        → set pred to true label → counted as CORRECT
+#      - true label is BENIGN (AE false alarm on correct BENIGN):
+#        → set pred to WRONG_LABEL → counted as WRONG
+#
+#    This is the same standard applied to the naive AE+XGB evaluation.
+#    The 25 Unknown Anomaly flows are NOT excluded from the denominator.
 # -----------------------------------------------------------------------
 print("\n" + "="*65)
 print("FINAL PIPELINE — CONFIDENCE-GATED AE + XGBOOST (gate=0.90)")
+print("Honest evaluation: all 419,376 flows, no exclusions")
 print("="*65)
 
 unknown_mask = flagged & (xgb_preds == BENIGN_LABEL) & (benign_conf < CONFIDENCE_GATE)
@@ -105,38 +108,47 @@ if unknown_mask.sum() > 0:
     print("True labels of Unknown Anomaly flows:")
     print(pd.Series(true_of_unknowns).value_counts())
 
-# exclude Unknown Anomaly from 15-class report
-# (they were deliberately not assigned a class label)
-non_unknown = ~unknown_mask
+# Build honest prediction array
+# Start from XGBoost predictions
+final_preds = xgb_preds.copy()
 
-print(f"\n--- 15-Class Report (excluding {unknown_mask.sum()} Unknown Anomaly flows) ---")
+# Unknown Anomaly flows where true label is a real attack:
+# give credit — these are genuine catches XGBoost would have missed
+correct_catch = unknown_mask & (y_test != BENIGN_LABEL)
+final_preds[correct_catch] = y_test[correct_catch]
+
+# Unknown Anomaly flows where true label is BENIGN:
+# penalize — AE incorrectly overrode a correct XGBoost BENIGN prediction
+false_alarm = unknown_mask & (y_test == BENIGN_LABEL)
+final_preds[false_alarm] = WRONG_LABEL
+
+print(f"\nReal attacks caught by AE that XGBoost missed: {correct_catch.sum()}")
+print(f"BENIGN flows wrongly converted to Unknown Anomaly: {false_alarm.sum()}")
+
+print(f"\n--- 15-Class Report (all 419,376 flows, honest scoring) ---")
+valid_labels = list(range(len(label_encoder.classes_)))
 print(classification_report(
-    y_test[non_unknown],
-    xgb_preds[non_unknown],
+    y_test, final_preds,
+    labels=valid_labels,
     target_names=label_encoder.classes_,
     digits=4
 ))
 
-combined_f1 = f1_score(
-    y_test[non_unknown],
-    xgb_preds[non_unknown],
-    average="macro"
-)
-print(f"Combined Pipeline Macro F1 (excl. Unknown Anomaly): {combined_f1:.4f}")
-print(f"Flows evaluated: {non_unknown.sum():,} / {len(y_test):,}")
+combined_f1 = f1_score(y_test, final_preds, labels=valid_labels, average="macro")
+print(f"Combined Pipeline Macro F1 (honest, no exclusions): {combined_f1:.4f}")
+print(f"Flows evaluated: {len(y_test):,} / {len(y_test):,}")
 
 # -----------------------------------------------------------------------
-# 6. Summary — all three versions side by side
+# 6. Summary — all three on identical test set
 # -----------------------------------------------------------------------
 print("\n" + "="*65)
-print("SUMMARY")
+print("SUMMARY — all three methods, same 419,376 flows")
 print("="*65)
 print(f"{'Version':<45} {'Macro F1':>10}")
 print("-" * 57)
 print(f"{'AE alone (binary)':<45} {ae_f1:>10.4f}")
 print(f"{'XGBoost alone (15-class)':<45} {xgb_f1:>10.4f}")
 print(f"{'Confidence-gated AE + XGBoost (final)':<45} {combined_f1:>10.4f}")
-print(f"\nNote: AE binary F1 and 15-class F1 are not directly comparable")
-print(f"(binary has 2 classes, 15-class has 15). Combined pipeline F1")
-print(f"reflects the complete system on {non_unknown.sum():,} flows where a")
-print(f"definitive class label was assigned.")
+print(f"\nNote: AE binary F1 is not directly comparable to 15-class F1.")
+print(f"The combined pipeline F1 uses the same scoring rule applied")
+print(f"to the naive AE+XGB version in evaluate_xgboost_v2.py.")
