@@ -257,3 +257,53 @@ if __name__ == "__main__":
     confusion_matrix_plot()
     feature_importance_plot()
     print("\nAll fast visuals done.")
+    
+    
+    
+
+def save(fig, name):
+    path = os.path.join(OUT, name)
+    fig.savefig(path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {path}")
+
+
+def combined_pipeline_f1_bar():
+    # From evaluate_final_pipeline.py, honest scoring, all 419,376 flows,
+    # after the WRONG_LABEL=-1 fix (Macro F1 = 0.8937)
+    f1 = {
+        "BENIGN": 0.9958,
+        "Bot": 0.6616,
+        "DDoS": 1.0000,
+        "DoS GoldenEye": 0.9971,
+        "DoS Hulk": 0.9998,
+        "DoS Slowhttptest": 0.9932,
+        "DoS slowloris": 0.9991,
+        "FTP-Patator": 0.9994,
+        "Heartbleed": 0.6667,
+        "Infiltration": 0.9412,
+        "PortScan": 0.9654,
+        "SSH-Patator": 1.0000,
+        "Web Attack - Brute Force": 0.7279,
+        "Web Attack - Sql Injection": 1.0000,
+        "Web Attack - XSS": 0.4582,
+    }
+    macro_avg = 0.8937
+
+    s = pd.Series(f1).sort_values()
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+    ax.barh(s.index, s.values, color="#4C72B0")
+    ax.axvline(macro_avg, color="red", linestyle="--", linewidth=1,
+               label=f"Macro Avg F1 ({macro_avg:.4f})")
+    ax.set_xlim(0, 1.05)
+    ax.set_xlabel("F1 Score")
+    ax.set_title("Confidence-Gated Pipeline Per-Class F1 Score (15-Class)")
+    ax.legend(loc="lower right")
+
+    save(fig, "19_combined_pipeline_f1_bar.png")
+
+
+if __name__ == "__main__":
+    combined_pipeline_f1_bar()
+    print("\nDone.")
