@@ -3,7 +3,6 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![TensorFlow](https://img.shields.io/badge/TensorFlow-2.x-orange.svg)
 ![XGBoost](https://img.shields.io/badge/XGBoost-ML-green.svg)
-![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)
 
 A **two-stage Machine Learning Intrusion Detection System (IDS)** for **encrypted network traffic**, combining:
 
@@ -408,10 +407,3 @@ Corrected CICFlowMeter
 
 https://github.com/GintsEngelen/CICFlowMeter
 
----
-
-# License
-
-This repository is intended for academic and research purposes.
-
-Please cite the original CIC-IDS2017 and Engelen et al. papers if using this work in research.
