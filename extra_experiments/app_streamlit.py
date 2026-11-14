@@ -11,6 +11,12 @@ import plotly.graph_objects as go
 
 from tensorflow import keras
 
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+MODEL_DIR = ROOT_DIR / "models"
+DEMO_DATA = ROOT_DIR / "demo_data" / "dashboard_simulation_demo.csv"
+
 # -----------------------------------------------------------------------
 # Page config
 # -----------------------------------------------------------------------
@@ -95,62 +101,78 @@ CLASS_COLORS = {
 }
 
 ALERT_CONFIDENCE_THRESHOLD = 0.85
+CONFIDENCE_GATE = 0.90
 MAX_HISTORY = 5000  # cap memory usage
 
 # -----------------------------------------------------------------------
 # Load models once
 # -----------------------------------------------------------------------
+
 @st.cache_resource
 def load_models():
-    scaler        = joblib.load("models/scaler.joblib")
-    autoencoder   = keras.models.load_model("models/autoencoder.keras")
-    xgb_model     = joblib.load("models/xgboost.joblib")
-    label_encoder = joblib.load("models/label_encoder.joblib")
-    with open("models/threshold.json") as f:
+    scaler = joblib.load(MODEL_DIR / "scaler.joblib")
+    autoencoder = keras.models.load_model(
+        MODEL_DIR / "autoencoder.keras"
+    )
+    xgb_model = joblib.load(MODEL_DIR / "xgboost.joblib")
+    label_encoder = joblib.load(MODEL_DIR / "label_encoder.joblib")
+
+    with open(MODEL_DIR / "threshold.json") as f:
         threshold = json.load(f)["threshold"]
+
     return scaler, autoencoder, xgb_model, label_encoder, threshold
+
 
 @st.cache_data
 def load_simulation_data():
-    df = pd.read_csv("processed/dashboard_simulation.csv")
+    df = pd.read_csv(DEMO_DATA)
     df = df.sample(frac=1, random_state=42).reset_index(drop=True)
     return df
 
 # -----------------------------------------------------------------------
 # Inference pipeline — one flow at a time
 # -----------------------------------------------------------------------
+
 def run_pipeline(row, scaler, autoencoder, xgb_model, label_encoder, threshold):
     features = row.drop("Label").values.reshape(1, -1)
-    scaled   = scaler.transform(features)
+    scaled = scaler.transform(features)
 
-    # autoencoder
-    recon      = autoencoder.predict(scaled, verbose=0)
-    mse        = float(np.mean(np.square(scaled - recon)))
+    # Stage 1: Autoencoder anomaly detection
+    recon = autoencoder.predict(scaled, verbose=0)
+    mse = float(np.mean(np.square(scaled - recon)))
     is_anomaly = mse > threshold
 
-    # xgboost
-    xgb_pred        = xgb_model.predict(scaled)[0]
-    xgb_probs       = xgb_model.predict_proba(scaled)[0]
-    xgb_confidence  = float(xgb_probs.max())
+    # Stage 2: XGBoost classification
+    xgb_pred = xgb_model.predict(scaled)[0]
+    xgb_probs = xgb_model.predict_proba(scaled)[0]
+
+    xgb_confidence = float(xgb_probs.max())
+    benign_label = label_encoder.transform(["BENIGN"])[0]
+    benign_confidence = float(xgb_probs[benign_label])
+
     predicted_class = label_encoder.inverse_transform([xgb_pred])[0]
 
-    # decision logic
-    benign_label = label_encoder.transform(["BENIGN"])[0]
-    if is_anomaly and xgb_pred == benign_label:
+    # Final confidence-gated decision logic
+    if (
+        is_anomaly
+        and xgb_pred == benign_label
+        and benign_confidence < CONFIDENCE_GATE
+    ):
         final_label = "Unknown Anomaly"
     else:
         final_label = predicted_class
 
     return {
-        "label":          final_label,
-        "xgb_confidence": xgb_confidence,  # XGBoost confidence (only meaningful for named classes)
-        "mse":            mse,
-        "mse_ratio":      mse / threshold,  # how many times above threshold (for Unknown Anomaly display)
-        "is_anomaly":     is_anomaly,
-        "true_label":     row["Label"],
-        "dst_port":       row.get("Dst Port", "—"),
-        "protocol":       row.get("Protocol", "—"),
+        "label": final_label,
+        "xgb_confidence": xgb_confidence,
+        "mse": mse,
+        "mse_ratio": mse / threshold,
+        "is_anomaly": is_anomaly,
+        "true_label": row["Label"],
+        "dst_port": row.get("Dst Port", "—"),
+        "protocol": row.get("Protocol", "—"),
     }
+
 
 # -----------------------------------------------------------------------
 # Session state init
@@ -169,7 +191,7 @@ with st.sidebar:
 
     delay_ms = st.slider(
         "Speed (delay between flows)",
-        min_value=0, max_value=1000, value=200, step=50,
+        min_value=0, max_value=1000, value=700, step=50,
         format="%d ms"
     )
 
@@ -204,7 +226,7 @@ total_rows = len(sim_data)
 # Header
 # -----------------------------------------------------------------------
 st.title("🛡️ Network Intrusion Detection System")
-st.caption("Real-time flow analysis — CIC-IDS2017 simulation")
+st.caption("Flow-by-flow ML detection simulation — CIC-IDS2017")
 st.markdown("---")
 
 # -----------------------------------------------------------------------
