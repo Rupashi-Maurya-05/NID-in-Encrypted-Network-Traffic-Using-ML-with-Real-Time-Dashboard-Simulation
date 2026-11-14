@@ -18,6 +18,12 @@ The system detects cyber attacks using only **flow-level statistical features ex
 
 ---
 
+## Live Demo
+
+🚀 **[Try the Deployed Streamlit Dashboard](https://nids-encrypted-traffic-demo.streamlit.app/)**
+
+---
+
 ## Project Overview
 
 This project was developed during an internship at **SAG DRDO** under the guidance of **Dr. Sanjay Kumar**.
