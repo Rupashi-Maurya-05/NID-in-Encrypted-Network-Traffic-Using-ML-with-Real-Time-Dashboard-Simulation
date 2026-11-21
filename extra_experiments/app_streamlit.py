@@ -23,7 +23,8 @@ DEMO_DATA = ROOT_DIR / "demo_data" / "dashboard_simulation_demo.csv"
 st.set_page_config(
     page_title="NIDS Dashboard",
     page_icon="🛡️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 st.markdown("""
